@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة تحكم Mint - الإدارة المالية</title>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        mint: { bg: '#F4F7FE', primary: '#4318FF', light: '#F4F7FE', text: '#2B3674', gray: '#A3AED0' }
+                    },
+                    fontFamily: { sans: ['Cairo', 'sans-serif'] }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { background-color: #F4F7FE; color: #2B3674; overflow: hidden; }
+        .mint-card { background: #ffffff; border-radius: 20px; box-shadow: 0px 10px 30px rgba(17, 38, 146, 0.05); }
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #A3AED0; border-radius: 4px; }
+        .sticky-footer th, .sticky-footer td { position: sticky; bottom: 0; z-index: 10; box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.1); }
+    </style>
+</head>
+<body class="flex flex-col h-screen w-full">
+
+    <header class="bg-white shadow-sm z-20 px-6 py-4 flex justify-between items-center border-b border-gray-100 relative">
+        <div class="flex items-center gap-4">
+            <div class="bg-mint-primary text-white w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-md">
+                <i class="fa-solid fa-chart-line"></i>
+            </div>
+            <div>
+                <h1 class="text-2xl font-black text-mint-text tracking-tight">Mint<span class="font-normal">Dash</span></h1>
+                <p class="text-xs font-bold text-mint-gray mt-1">لوحة الإدارة المالية الشاملة</p>
+            </div>
+        </div>
+        <div>
+            <label for="excel-upload" class="cursor-pointer bg-mint-primary text-white font-bold hover:bg-opacity-90 px-6 py-3 rounded-full transition shadow-md flex items-center gap-2">
+                <i class="fa-solid fa-cloud-arrow-up text-lg"></i> <span class="hidden md:inline">رفع الشيت يدوياً</span>
+            </label>
+            <input type="file" id="excel-upload" accept=".xlsx, .xls" class="hidden">
+        </div>
+    </header>
+
+    <main class="flex-1 overflow-y-auto custom-scrollbar p-4 md:p-8">
+        
+        <div id="loading-state" class="mint-card max-w-2xl mx-auto p-16 text-center mt-10">
+            <i class="fa-solid fa-circle-notch fa-spin text-5xl text-mint-primary mb-4"></i>
+            <h3 class="text-2xl font-black text-mint-text">جاري سحب البيانات...</h3>
+            <p class="text-mint-gray font-bold mt-2">يتم قراءة شيت "ملخص العملاء" و "العملاء × المراكز"</p>
+        </div>
+
+        <div id="local-warning" class="hidden mint-card max-w-2xl mx-auto p-16 text-center mt-10 border-2 border-orange-100">
+            <i class="fa-solid fa-desktop text-5xl text-orange-500 mb-4"></i>
+            <h3 class="text-2xl font-black text-mint-text">أنت تتصفح من جهازك (Local)</h3>
+            <p class="text-mint-gray font-bold mt-2 mb-6">التحميل التلقائي يعمل فقط على الإنترنت. يرجى استخدام الزر الأزرق بالأعلى لرفع شيت الإكسيل يدوياً.</p>
+            <label for="excel-upload-local" class="cursor-pointer inline-block bg-orange-500 text-white font-bold px-8 py-3 rounded-full hover:bg-orange-600 transition">
+                رفع شيت الإكسيل الآن
+            </label>
+            <input type="file" id="excel-upload-local" accept=".xlsx, .xls" class="hidden">
+        </div>
+
+        <div id="error-state" class="hidden mint-card max-w-2xl mx-auto p-12 text-center mt-10 border-2 border-red-200">
+            <i class="fa-solid fa-triangle-exclamation text-5xl text-red-500 mb-4"></i>
+            <h3 class="text-2xl font-black text-mint-text mb-2">عذراً، حدث خطأ!</h3>
+            <div id="error-message" class="text-sm font-bold text-red-600 bg-red-50 p-4 rounded-lg mt-4 text-left" dir="ltr"></div>
+        </div>
+
+        <div id="main-content" class="hidden flex-col gap-12 max-w-7xl mx-auto w-full pb-10">
+            
+            <!-- ================= القسم الأول: ملخص العملاء ================= -->
+            <section class="space-y-6">
+                <div class="flex items-center gap-3">
+                    <span class="w-8 h-8 rounded-full bg-mint-primary text-white flex items-center justify-center font-bold text-lg">1</span>
+                    <h2 class="text-2xl font-black text-mint-text">لوحة ملخص العملاء</h2>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="mint-card p-6 flex items-center gap-4">
+                        <div class="w-14 h-14 rounded-full bg-green-50 text-green-500 flex items-center justify-center text-2xl"><i class="fa-solid fa-money-bill-trend-up"></i></div>
+                        <div><p class="text-sm font-bold text-mint-gray mb-1">إجمالي الإيرادات</p><p id="sum-value" class="text-2xl font-black text-mint-text">0</p></div>
+                    </div>
+                    <div class="mint-card p-6 flex items-center gap-4">
+                        <div class="w-14 h-14 rounded-full bg-red-50 text-red-500 flex items-center justify-center text-2xl"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                        <div><p class="text-sm font-bold text-mint-gray mb-1">إجمالي المصروفات</p><p id="sum-expenses" class="text-2xl font-black text-mint-text">0</p></div>
+                    </div>
+                    <div class="mint-card p-6 flex items-center gap-4 border-b-4 border-mint-primary">
+                        <div class="w-14 h-14 rounded-full bg-mint-light text-mint-primary flex items-center justify-center text-2xl"><i class="fa-solid fa-scale-balanced"></i></div>
+                        <div><p class="text-sm font-bold text-mint-gray mb-1">صافي الربح الإجمالي</p><p id="sum-profit" class="text-2xl font-black text-mint-primary">0</p></div>
+                    </div>
+                    <div class="mint-card p-6 flex items-center gap-4">
+                        <div class="w-14 h-14 rounded-full bg-orange-50 text-orange-500 flex items-center justify-center text-2xl"><i class="fa-solid fa-file-invoice"></i></div>
+                        <div><p class="text-sm font-bold text-mint-gray mb-1">إجمالي الفواتير</p><p id="sum-invoices" class="text-2xl font-black text-mint-text">0</p></div>
+                    </div>
+                </div>
+
+                <div class="mint-card p-6">
+                    <h3 class="text-xl font-black mb-6 text-mint-text">مؤشر الأرباح والمصروفات لأعلى العملاء</h3>
+                    <div class="w-full h-72"><canvas id="summaryChart"></canvas></div>
+                </div>
+
+                <div class="mint-card overflow-hidden border border-gray-100">
+                    <div class="p-5 bg-white border-b border-gray-100"><h3 class="text-lg font-black text-mint-text">تفاصيل الملخص</h3></div>
+                    <div class="overflow-x-auto custom-scrollbar">
+                        <table class="w-full text-right border-collapse whitespace-nowrap">
+                            <thead class="bg-[#F4F7FE] text-mint-gray">
+                                <tr>
+                                    <th class="p-4 font-bold text-sm">العميل</th>
+                                    <th class="p-4 font-bold text-sm">المراكز</th>
+                                    <th class="p-4 font-bold text-sm">الفواتير</th>
+                                    <th class="p-4 font-bold text-sm">أيام العمل</th>
+                                    <th class="p-4 font-bold text-sm">أول فاتورة</th>
+                                    <th class="p-4 font-bold text-sm">الكمية</th>
+                                    <th class="p-4 font-bold text-sm">إجمالي الإيرادات</th>
+                                    <th class="p-4 font-bold text-sm">المصروفات</th>
+                                    <th class="p-4 font-bold text-sm">صافى الربح</th>
+                                </tr>
+                            </thead>
+                            <tbody id="summary-tbody" class="text-mint-text font-semibold divide-y divide-gray-100"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+            <div class="flex items-center justify-center my-4">
+                <hr class="w-full border-gray-200">
+                <i class="fa-solid fa-arrow-down text-gray-300 mx-4 text-xl"></i>
+                <hr class="w-full border-gray-200">
+            </div>
+
+            <!-- ================= القسم الثاني: العملاء والمراكز ================= -->
+            <section class="space-y-6">
+                <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-3">
+                        <span class="w-8 h-8 rounded-full bg-mint-primary text-white flex items-center justify-center font-bold text-lg">2</span>
+                        <h2 class="text-2xl font-black text-mint-text">تفاصيل العملاء × المراكز</h2>
+                    </div>
+                    <span id="centers-count" class="bg-mint-primary text-white text-sm font-bold px-4 py-1.5 rounded-full shadow-sm">0 سجل مطابق</span>
+                </div>
+
+                <div id="losses-alert-container" class="hidden mb-6"></div>
+                
+                <div class="mint-card p-6 bg-white border border-gray-100">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                        <div class="relative w-full">
+                            <input type="text" id="global-search" placeholder="بحث عام (كلمة أو رقم)..." class="w-full bg-[#F4F7FE] border-none text-mint-text font-bold py-3 pl-4 pr-12 rounded-xl focus:ring-2 focus:ring-mint-primary outline-none transition">
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-4 text-mint-gray pointer-events-none"><i class="fa-solid fa-magnifying-glass"></i></div>
+                        </div>
+                        <div class="relative w-full">
+                            <select id="customer-filter" class="w-full bg-[#F4F7FE] border-none text-mint-text font-bold py-3 pl-4 pr-12 rounded-xl focus:ring-2 focus:ring-mint-primary outline-none appearance-none cursor-pointer">
+                                <option value="all">كل العملاء</option>
+                            </select>
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-4 text-mint-gray pointer-events-none"><i class="fa-solid fa-user-tie"></i></div>
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-4 text-mint-gray pointer-events-none"><i class="fa-solid fa-chevron-down text-xs"></i></div>
+                        </div>
+                        <div class="relative w-full">
+                            <select id="center-filter" class="w-full bg-[#F4F7FE] border-none text-mint-text font-bold py-3 pl-4 pr-12 rounded-xl focus:ring-2 focus:ring-mint-primary outline-none appearance-none cursor-pointer">
+                                <option value="all">كل مراكز التكلفة</option>
+                            </select>
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-4 text-mint-gray pointer-events-none"><i class="fa-solid fa-building"></i></div>
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-4 text-mint-gray pointer-events-none"><i class="fa-solid fa-chevron-down text-xs"></i></div>
+                        </div>
+                        <div class="relative w-full">
+                            <select id="desc-filter" class="w-full bg-[#F4F7FE] border-none text-mint-text font-bold py-3 pl-4 pr-12 rounded-xl focus:ring-2 focus:ring-mint-primary outline-none appearance-none cursor-pointer">
+                                <option value="all">كل البيانات</option>
+                            </select>
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-4 text-mint-gray pointer-events-none"><i class="fa-solid fa-list"></i></div>
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-4 text-mint-gray pointer-events-none"><i class="fa-solid fa-chevron-down text-xs"></i></div>
+                        </div>
+                        <div class="relative w-full">
+                            <select id="profit-filter" class="w-full bg-red-50 text-red-600 border-none font-bold py-3 pl-4 pr-12 rounded-xl focus:ring-2 focus:ring-red-400 outline-none appearance-none cursor-pointer">
+                                <option value="all">الكل (ربح أو خسارة)</option>
+                                <option value="loss">المراكز الخاسرة فقط</option>
+                                <option value="profit" class="text-emerald-600">المراكز الرابحة فقط</option>
+                            </select>
+                            <div class="absolute inset-y-0 right-0 flex items-center pr-4 text-red-400 pointer-events-none"><i class="fa-solid fa-scale-balanced"></i></div>
+                            <div class="absolute inset-y-0 left-0 flex items-center pl-4 text-red-400 pointer-events-none"><i class="fa-solid fa-chevron-down text-xs"></i></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mint-card overflow-hidden border border-gray-100">
+                    <div class="overflow-x-auto custom-scrollbar max-h-[70vh] relative">
+                        <table class="w-full text-right border-collapse whitespace-nowrap relative">
+                            <thead class="bg-[#F4F7FE] text-mint-gray sticky top-0 shadow-sm z-10">
+                                <tr>
+                                    <th class="p-4 font-bold text-sm">العميل</th>
+                                    <th class="p-4 font-bold text-sm">مركز التكلفة</th>
+                                    <th class="p-4 font-bold text-sm">البيان</th>
+                                    <th class="p-4 font-bold text-sm">الفواتير</th>
+                                    <th class="p-4 font-bold text-sm">التاريخ</th>
+                                    <th class="p-4 font-bold text-sm">الكمية</th>
+                                    <th class="p-4 font-bold text-sm">الإيرادات</th>
+                                    <th class="p-4 font-bold text-sm">المصروفات</th>
+                                    <th class="p-4 font-bold text-sm">الربح/الخسارة</th>
+                                </tr>
+                            </thead>
+                            <tbody id="centers-tbody" class="text-mint-text font-semibold divide-y divide-gray-100"></tbody>
+                            <tfoot class="sticky-footer bg-mint-text text-white">
+                                <tr id="centers-tfoot"></tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <script>
+        let summaryData = [];
+        let centersData = [];
+        let myChart = null;
+
+        function showError(msg) {
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('local-warning').classList.add('hidden');
+            document.getElementById('main-content').classList.add('hidden');
+            const errBox = document.getElementById('error-state');
+            errBox.classList.remove('hidden');
+            document.getElementById('error-message').innerText = String(msg);
+        }
+
+        window.onload = async function() {
+            if (window.location.protocol === 'file:') {
+                document.getElementById('loading-state').classList.add('hidden');
+                document.getElementById('local-warning').classList.remove('hidden');
+                return;
+            }
+            try {
+                const response = await fetch('data.xlsx?v=' + new Date().getTime());
+                if (!response.ok) throw new Error('لا يمكن العثور على ملف data.xlsx');
+                const arrayBuffer = await response.arrayBuffer();
+                const data = new Uint8Array(arrayBuffer);
+                const workbook = XLSX.read(data, {type: 'array'});
+                processWorkbook(workbook);
+            } catch (error) { showError(error.message || error); }
+        };
+
+        const uploadHandler = function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            document.getElementById('local-warning').classList.add('hidden');
+            document.getElementById('error-state').classList.add('hidden');
+            document.getElementById('main-content').classList.add('hidden');
+            document.getElementById('main-content').classList.remove('flex');
+            document.getElementById('loading-state').classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, {type: 'array'});
+                    processWorkbook(workbook);
+                } catch (error) { showError("خطأ في قراءة ملف الإكسيل: " + error.message); }
+            };
+            reader.readAsArrayBuffer(file);
+        };
+        
+        document.getElementById('excel-upload').addEventListener('change', uploadHandler);
+        document.getElementById('excel-upload-local').addEventListener('change', uploadHandler);
+
+        function parseNum(val) {
+            if(!val) return 0;
+            const parsed = parseFloat(String(val).replace(/,/g, ''));
+            return isNaN(parsed) ? 0 : parsed;
+        }
+        function formatNum(num) {
+            return Number(num).toLocaleString('en-US', {minimumFractionDigits: 0, maximumFractionDigits: 2});
+        }
+
+        // الكود الفولاذي لاصطياد العناوين مهما كان فيها مسافات أو حروف متلخبطة
+        function getSmartVal(rowObj, keywords) {
+            for(let key of Object.keys(rowObj)) {
+                // استخدام /g لاستبدال الحروف في الجملة كلها مش أول حرف بس
+                let cleanKey = key.replace(/\s+/g, '').replace(/ي/g, 'ى').replace(/ة/g, 'ه').replace(/[أإآ]/g, 'ا');
+                for(let kw of keywords) {
+                    let cleanKw = kw.replace(/\s+/g, '').replace(/ي/g, 'ى').replace(/ة/g, 'ه').replace(/[أإآ]/g, 'ا');
+                    if(cleanKey.includes(cleanKw)) return rowObj[key];
+                }
+            }
+            return '';
+        }
+
+        function extractData(rawRows) {
+            let headerIdx = -1;
+            let amilKey = '';
+            for(let i = 0; i < Math.min(rawRows.length, 10); i++) {
+                if(!rawRows[i]) continue;
+                for(let j=0; j<rawRows[i].length; j++) {
+                    let cellStr = String(rawRows[i][j]).trim();
+                    if(cellStr.includes('العميل')) { headerIdx = i; amilKey = rawRows[i][j]; break; }
+                }
+                if(headerIdx !== -1) break;
+            }
+            if(headerIdx === -1) return [];
+            
+            const headers = rawRows[headerIdx].map(h => String(h).trim());
+            const data = [];
+            
+            for(let i = headerIdx + 1; i < rawRows.length; i++) {
+                const row = rawRows[i];
+                if(!row || row.length === 0) continue;
+                
+                let obj = {};
+                let isEmpty = true;
+                headers.forEach((h, idx) => {
+                    let val = row[idx] !== undefined ? row[idx] : '';
+                    obj[h] = val;
+                    if(String(val).trim() !== '' && !h.includes('العميل')) isEmpty = false;
+                });
+                
+                let amilVal = String(obj[amilKey] || '').trim();
+                if(!isEmpty && !amilVal.includes('الإجمالي') && amilVal !== '') data.push(obj);
+            }
+            return data;
+        }
+
+        function processWorkbook(workbook) {
+            summaryData = []; centersData = [];
+            let summarySheetName = workbook.SheetNames.find(s => s.includes('ملخص العملاء'));
+            let centersSheetName = workbook.SheetNames.find(s => s.includes('العملاء') && s.includes('المراكز'));
+
+            if (summarySheetName) {
+                const raw = XLSX.utils.sheet_to_json(workbook.Sheets[summarySheetName], {header: 1, defval: ""});
+                summaryData = extractData(raw);
+            }
+            if (centersSheetName) {
+                const raw = XLSX.utils.sheet_to_json(workbook.Sheets[centersSheetName], {header: 1, defval: ""});
+                centersData = extractData(raw);
+            }
+
+            if(summaryData.length === 0 && centersData.length === 0) {
+                throw new Error("لم يتم العثور على بيانات. تأكد من صحة الملف.");
+            }
+
+            renderSummary();
+            renderCentersFilters();
+            applyCentersFilters();
+            
+            document.getElementById('loading-state').classList.add('hidden');
+            document.getElementById('local-warning').classList.add('hidden');
+            document.getElementById('error-state').classList.add('hidden');
+            const mainContent = document.getElementById('main-content');
+            mainContent.classList.remove('hidden');
+            mainContent.classList.add('flex');
+        }
+
+        function renderSummary() {
+            let totalVal = 0, totalExp = 0, totalNet = 0, totalInv = 0;
+            const tbody = document.getElementById('summary-tbody');
+            tbody.innerHTML = '';
+
+            summaryData.forEach(r => {
+                // الكلمات الدلالية تمت توسعتها لضمان التقاط القيم مهما اتغير اسم العمود
+                let v = parseNum(getSmartVal(r, ['القيمة', 'الايرادات', 'ايرادات']));
+                let e = parseNum(getSmartVal(r, ['المصروفات', 'مصروفات']));
+                let n = parseNum(getSmartVal(r, ['صافي', 'ربح', 'خساره']));
+                let i = parseNum(getSmartVal(r, ['الفواتير', 'فواتير']));
+                let qty = parseNum(getSmartVal(r, ['الكمية', 'كمية']));
+                
+                totalVal += v; totalExp += e; totalNet += n; totalInv += i;
+                let netColor = n >= 0 ? 'text-emerald-500 bg-emerald-50' : 'text-red-500 bg-red-50';
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-4 font-bold text-mint-primary">${getSmartVal(r, ['العميل', 'عميل']) || '-'}</td>
+                        <td class="p-4">${getSmartVal(r, ['مراكز', 'مركز']) || '-'}</td>
+                        <td class="p-4">${i || '-'}</td>
+                        <td class="p-4">${getSmartVal(r, ['أيام', 'ايام']) || '-'}</td>
+                        <td class="p-4 text-xs text-mint-gray">${getSmartVal(r, ['أول', 'اول']) || '-'}</td>
+                        <td class="p-4">${formatNum(qty)}</td>
+                        <td class="p-4 font-bold text-blue-600">${formatNum(v)}</td>
+                        <td class="p-4 font-bold text-red-500">${formatNum(e)}</td>
+                        <td class="p-4 font-bold"><span class="px-3 py-1 rounded-full ${netColor}">${formatNum(n)}</span></td>
+                    </tr>
+                `;
+            });
+
+            document.getElementById('sum-value').innerText = formatNum(totalVal);
+            document.getElementById('sum-expenses').innerText = formatNum(totalExp);
+            document.getElementById('sum-profit').innerText = formatNum(totalNet);
+            document.getElementById('sum-invoices').innerText = formatNum(totalInv);
+            if(typeof Chart !== 'undefined') drawChart(summaryData);
+        }
+
+        function drawChart(data) {
+            const ctx = document.getElementById('summaryChart').getContext('2d');
+            if(myChart) myChart.destroy();
+            const sortedData = [...data].sort((a, b) => parseNum(getSmartVal(b, ['صافي', 'ربح'])) - parseNum(getSmartVal(a, ['صافي', 'ربح']))).slice(0, 8);
+            
+            Chart.defaults.font.family = 'Cairo';
+            myChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: sortedData.map(s => String(getSmartVal(s, ['العميل', 'عميل'])).substring(0,15)+'...'),
+                    datasets: [
+                        { label: 'صافي الربح', data: sortedData.map(s => parseNum(getSmartVal(s, ['صافي', 'ربح']))), backgroundColor: '#4318FF', borderRadius: 8 },
+                        { label: 'المصروفات', data: sortedData.map(s => parseNum(getSmartVal(s, ['المصروفات']))), backgroundColor: '#E0E5F2', borderRadius: 8 }
+                    ]
+                },
+                options: {
+                    responsive: true, maintainAspectRatio: false,
+                    scales: { y: { grid: { borderDash: [5, 5], color: '#f1f5f9' } }, x: { grid: { display: false } } },
+                    plugins: { legend: { labels: { font: { weight: 'bold' } } } }
+                }
+            });
+        }
+
+        function renderCentersFilters() {
+            const uniqueCustomers = [...new Set(centersData.map(r => getSmartVal(r, ['العميل', 'عميل'])).filter(Boolean))];
+            const uniqueCenters = [...new Set(centersData.map(r => getSmartVal(r, ['مركز', 'مراكز'])).filter(Boolean))];
+            const uniqueDesc = [...new Set(centersData.map(r => getSmartVal(r, ['البيان', 'بيان'])).filter(Boolean))];
+
+            const custFilter = document.getElementById('customer-filter');
+            const centerFilter = document.getElementById('center-filter');
+            const descFilter = document.getElementById('desc-filter');
+
+            custFilter.innerHTML = '<option value="all">كل العملاء</option>';
+            centerFilter.innerHTML = '<option value="all">كل مراكز التكلفة</option>';
+            descFilter.innerHTML = '<option value="all">كل البيانات</option>';
+
+            uniqueCustomers.forEach(c => custFilter.innerHTML += `<option value="${c}">${c}</option>`);
+            uniqueCenters.forEach(c => centerFilter.innerHTML += `<option value="${c}">${c}</option>`);
+            uniqueDesc.forEach(c => descFilter.innerHTML += `<option value="${c}">${c}</option>`);
+        }
+
+        document.getElementById('customer-filter').addEventListener('change', applyCentersFilters);
+        document.getElementById('center-filter').addEventListener('change', applyCentersFilters);
+        document.getElementById('desc-filter').addEventListener('change', applyCentersFilters);
+        document.getElementById('profit-filter').addEventListener('change', applyCentersFilters);
+        document.getElementById('global-search').addEventListener('input', applyCentersFilters);
+
+        function applyCentersFilters() {
+            const custVal = document.getElementById('customer-filter').value;
+            const centerVal = document.getElementById('center-filter').value;
+            const descVal = document.getElementById('desc-filter').value;
+            const profitVal = document.getElementById('profit-filter').value;
+            const searchVal = document.getElementById('global-search').value.toLowerCase().trim();
+
+            const tbody = document.getElementById('centers-tbody');
+            tbody.innerHTML = '';
+            
+            let totalQty = 0, totalVal = 0, totalExp = 0, totalNet = 0;
+            let lossesHtml = '';
+            let lossesCount = 0;
+            let totalLossesAmount = 0;
+
+            const filtered = centersData.filter(r => {
+                let rCust = getSmartVal(r, ['العميل', 'عميل']);
+                let rCenter = getSmartVal(r, ['مركز', 'مراكز']);
+                let rDesc = getSmartVal(r, ['البيان', 'بيان']);
+                let rNet = parseNum(getSmartVal(r, ['صافي', 'ربح']));
+
+                let matchCust = (custVal === 'all' || rCust === custVal);
+                let matchCenter = (centerVal === 'all' || rCenter === centerVal);
+                let matchDesc = (descVal === 'all' || rDesc === descVal);
+                
+                let matchProfit = true;
+                if(profitVal === 'loss') matchProfit = (rNet < 0);
+                if(profitVal === 'profit') matchProfit = (rNet >= 0);
+
+                let matchSearch = true;
+                if(searchVal !== '') { matchSearch = Object.values(r).some(val => String(val).toLowerCase().includes(searchVal)); }
+                
+                return matchCust && matchCenter && matchDesc && matchProfit && matchSearch;
+            });
+
+            document.getElementById('centers-count').innerText = `${filtered.length} سجل مطابق`;
+            
+            filtered.forEach(r => {
+                let qty = parseNum(getSmartVal(r, ['الكمية', 'كمية']));
+                let v = parseNum(getSmartVal(r, ['القيمة', 'الايرادات', 'ايرادات']));
+                let e = parseNum(getSmartVal(r, ['المصروفات', 'مصروفات']));
+                let net = parseNum(getSmartVal(r, ['صافي', 'ربح', 'خساره']));
+                
+                totalQty += qty; totalVal += v; totalExp += e; totalNet += net;
+
+                if (net < 0) {
+                    lossesCount++;
+                    totalLossesAmount += net;
+                    lossesHtml += `
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-xl border-r-4 border-red-500 shadow-sm mb-3">
+                            <div class="flex items-center gap-3 mb-2 md:mb-0">
+                                <div class="w-10 h-10 rounded-full bg-red-100 text-red-500 flex items-center justify-center"><i class="fa-solid fa-arrow-trend-down"></i></div>
+                                <div>
+                                    <p class="text-sm font-bold text-mint-gray">العميل: <span class="text-mint-text">${getSmartVal(r, ['العميل', 'عميل'])}</span></p>
+                                    <p class="text-sm font-bold text-mint-gray">المركز: <span class="text-red-500">${getSmartVal(r, ['مركز', 'مراكز'])}</span></p>
+                                </div>
+                            </div>
+                            <div class="text-left">
+                                <p class="text-xs font-bold text-red-400">قيمة الخسارة</p>
+                                <p class="text-xl font-black text-red-600" dir="ltr">${formatNum(net)}</p>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                let netColor = net >= 0 ? 'text-emerald-500' : 'text-red-500';
+
+                tbody.innerHTML += `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-4 font-bold text-mint-text">${getSmartVal(r, ['العميل', 'عميل']) || '-'}</td>
+                        <td class="p-4 font-bold text-mint-primary bg-mint-light/50 rounded-r-lg">${getSmartVal(r, ['مركز', 'مراكز']) || '-'}</td>
+                        <td class="p-4">${getSmartVal(r, ['البيان', 'بيان']) || '-'}</td>
+                        <td class="p-4">${getSmartVal(r, ['الفواتير', 'فواتير']) || '0'}</td>
+                        <td class="p-4 text-xs text-mint-gray">${getSmartVal(r, ['أول', 'اول']) || '-'}</td>
+                        <td class="p-4">${formatNum(qty)}</td>
+                        <td class="p-4 font-bold text-blue-600">${formatNum(v)}</td>
+                        <td class="p-4 font-bold text-red-400">${formatNum(e)}</td>
+                        <td class="p-4 font-black ${netColor}">${formatNum(net)}</td>
+                    </tr>
+                `;
+            });
+
+            let totalNetColor = totalNet >= 0 ? 'text-emerald-400' : 'text-red-400';
+            document.getElementById('centers-tfoot').innerHTML = `
+                <td colspan="5" class="p-4 text-lg text-left">الإجماليات الخاصة بالبحث الحالي:</td>
+                <td class="p-4 text-lg">${formatNum(totalQty)}</td>
+                <td class="p-4 text-lg text-blue-300">${formatNum(totalVal)}</td>
+                <td class="p-4 text-lg text-red-300">${formatNum(totalExp)}</td>
+                <td class="p-4 text-lg ${totalNetColor}">${formatNum(totalNet)}</td>
+            `;
+
+            const lossContainer = document.getElementById('losses-alert-container');
+            if (lossesCount > 0) {
+                lossContainer.innerHTML = `
+                    <div class="mint-card p-6 bg-red-50 border border-red-100 mb-2">
+                        <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-4 gap-4">
+                            <h3 class="text-xl font-black text-red-600 flex items-center gap-2">
+                                <i class="fa-solid fa-triangle-exclamation"></i> رادار الخسائر (${lossesCount} مراكز)
+                            </h3>
+                            <div class="bg-white px-4 py-2 rounded-xl shadow-sm border border-red-200">
+                                <span class="text-sm font-bold text-mint-gray">إجمالي خسائر الرادار:</span>
+                                <span class="text-xl font-black text-red-600 mr-2" dir="ltr">${formatNum(totalLossesAmount)}</span>
+                            </div>
+                        </div>
+                        <div class="max-h-64 overflow-y-auto custom-scrollbar pr-2">
+                            ${lossesHtml}
+                        </div>
+                    </div>
+                `;
+                lossContainer.classList.remove('hidden');
+            } else {
+                lossContainer.classList.add('hidden');
+                lossContainer.innerHTML = '';
+            }
+        }
+    </script>
+</body>
+</html>
